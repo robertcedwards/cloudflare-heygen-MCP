@@ -1,6 +1,7 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { DurableObjectState } from "cloudflare:durable-objects";
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
@@ -8,6 +9,11 @@ export class MyMCP extends McpAgent {
 		name: "Heygen MCP",
 		version: "1.0.0",
 	});
+
+	constructor(state: DurableObjectState, env: Env) {
+		super(state, env);
+		this.init(env.HEYGEN_API_KEY);
+	}
 
 	async init(heygenApiKey: string) {
 		// Simple addition tool
@@ -149,22 +155,202 @@ export class MyMCP extends McpAgent {
 			}
 		);
 	}
+
+	async fetch(request: Request): Promise<Response> {
+		// Handle MCP protocol requests
+		const url = new URL(request.url);
+		
+		// For SSE endpoints, use the parent class implementation
+		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
+			return super.fetch(request);
+		}
+
+		// For MCP endpoint, handle tool calls
+		if (url.pathname === "/mcp") {
+			try {
+				const body = await request.json() as any;
+				
+				// Handle tool calls
+				if (body.tool) {
+					const toolName = body.tool as string;
+					const toolParams = { ...body } as any;
+					delete toolParams.tool;
+					
+					// Simple tool routing based on tool name
+					let result: any;
+					
+					switch (toolName) {
+						case "add":
+							if (typeof toolParams.a === "number" && typeof toolParams.b === "number") {
+								result = { content: [{ type: "text", text: String(toolParams.a + toolParams.b) }] };
+							} else {
+								return new Response(JSON.stringify({ error: "Invalid parameters for add tool" }), {
+									status: 400,
+									headers: { "Content-Type": "application/json" }
+								});
+							}
+							break;
+							
+						case "calculate":
+							if (toolParams.operation && typeof toolParams.a === "number" && typeof toolParams.b === "number") {
+								let calcResult: number = 0;
+								switch (toolParams.operation) {
+									case "add":
+										calcResult = toolParams.a + toolParams.b;
+										break;
+									case "subtract":
+										calcResult = toolParams.a - toolParams.b;
+										break;
+									case "multiply":
+										calcResult = toolParams.a * toolParams.b;
+										break;
+									case "divide":
+										if (toolParams.b === 0) {
+											result = { content: [{ type: "text", text: "Error: Cannot divide by zero" }] };
+										} else {
+											calcResult = toolParams.a / toolParams.b;
+										}
+										break;
+									default:
+										return new Response(JSON.stringify({ error: "Invalid operation" }), {
+											status: 400,
+											headers: { "Content-Type": "application/json" }
+										});
+								}
+								if (result === undefined) {
+									result = { content: [{ type: "text", text: String(calcResult) }] };
+								}
+							} else {
+								return new Response(JSON.stringify({ error: "Invalid parameters for calculate tool" }), {
+									status: 400,
+									headers: { "Content-Type": "application/json" }
+								});
+							}
+							break;
+							
+						case "create_heygen_video":
+							// Call the actual HeyGen API
+							if (toolParams.avatar_id && toolParams.voice_id && toolParams.input_text) {
+								const body = {
+									video_inputs: [
+										{
+											character: {
+												type: "avatar",
+												avatar_id: toolParams.avatar_id,
+												avatar_style: "normal",
+											},
+											voice: {
+												type: "text",
+												input_text: toolParams.input_text,
+												voice_id: toolParams.voice_id,
+											},
+											background: toolParams.background
+												? { type: "color", value: toolParams.background }
+												: undefined,
+										},
+									],
+									dimension: {
+										width: 1280,
+										height: 720,
+									},
+								};
+								
+								try {
+									const response = await fetch("https://api.heygen.com/v2/video/generate", {
+										method: "POST",
+										headers: {
+											"X-Api-Key": this.env.HEYGEN_API_KEY,
+											"Content-Type": "application/json",
+										},
+										body: JSON.stringify(body),
+									});
+									
+									if (!response.ok) {
+										const errorText = await response.text();
+										result = {
+											content: [
+												{
+													type: "text",
+													text: `HeyGen API error: ${response.status} ${errorText}`,
+												},
+											],
+										};
+									} else {
+										const data = await response.json() as { error?: any; data?: { video_id: string } };
+										if (data.error) {
+											result = {
+												content: [
+													{
+														type: "text",
+														text: `HeyGen API error: ${JSON.stringify(data.error as any)}`,
+													},
+												],
+											};
+										} else {
+											result = {
+												content: [
+													{
+														type: "text",
+														text: `HeyGen video created! video_id: ${data.data?.video_id || 'unknown'}`,
+													},
+												],
+											};
+										}
+									}
+								} catch (err) {
+									result = {
+										content: [
+											{
+												type: "text",
+												text: `Request failed: ${err instanceof Error ? err.message : String(err)}`,
+											},
+										],
+									};
+								}
+							} else {
+								return new Response(JSON.stringify({ error: "Missing required parameters for create_heygen_video tool" }), {
+									status: 400,
+									headers: { "Content-Type": "application/json" }
+								});
+							}
+							break;
+							
+						default:
+							return new Response(JSON.stringify({ error: `Tool '${toolName}' not found` }), {
+								status: 404,
+								headers: { "Content-Type": "application/json" }
+							});
+					}
+					
+					return new Response(JSON.stringify(result), {
+						headers: { "Content-Type": "application/json" }
+					});
+				}
+				
+				return new Response(JSON.stringify({ error: "Invalid request format" }), {
+					status: 400,
+					headers: { "Content-Type": "application/json" }
+				});
+			} catch (error) {
+				return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+					status: 400,
+					headers: { "Content-Type": "application/json" }
+				});
+			}
+		}
+
+		return new Response("Not found", { status: 404 });
+	}
 }
 
 export default {
 	async fetch(request: Request, env: Env & { HEYGEN_API_KEY: string }, ctx: ExecutionContext) {
 		const url = new URL(request.url);
 
-		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-			const mcp = new MyMCP();
-			await mcp.init(env.HEYGEN_API_KEY);
-			return mcp.server.fetch(request, env, ctx);
-		}
-
-		if (url.pathname === "/mcp") {
-			const mcp = new MyMCP();
-			await mcp.init(env.HEYGEN_API_KEY);
-			return mcp.server.fetch(request, env, ctx);
+		if (url.pathname === "/sse" || url.pathname === "/sse/message" || url.pathname === "/mcp") {
+			const id = env.MCP_OBJECT.idFromName("default");
+			const obj = env.MCP_OBJECT.get(id);
+			return obj.fetch(request);
 		}
 
 		return new Response("Not found", { status: 404 });

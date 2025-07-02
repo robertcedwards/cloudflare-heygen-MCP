@@ -8,6 +8,9 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2025-03-10",
 	"compatibility_flags": ["nodejs_compat"],
+	"vars": {
+		"HEYGEN_API_KEY": ""
+	},
 	"migrations": [
 		{
 			"new_sqlite_classes": ["MyMCP"],
