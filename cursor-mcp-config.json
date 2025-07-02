@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "heygen-mcp": {
+      "command": "curl",
+      "args": [
+        "-X",
+        "POST",
+        "http://localhost:8787/mcp/tools/call",
+        "-H",
+        "Content-Type: application/json",
+        "-d"
+      ],
+      "env": {}
+    }
+  }
+} 

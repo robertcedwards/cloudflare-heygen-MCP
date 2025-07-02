@@ -1,0 +1,64 @@
+# Cursor MCP Configuration for HeyGen MCP Server
+
+## Setup Instructions
+
+1. **Start the Cloudflare Worker**:
+   ```bash
+   npm run dev
+   ```
+
+2. **Configure Cursor to use the MCP Bridge**:
+   - Open Cursor Settings
+   - Go to Extensions > MCP
+   - Add a new MCP server with the following configuration:
+     - Name: `heygen-mcp`
+     - Command: `node`
+     - Args: `[path-to-your-project]/mcp-bridge.js`
+     - Working Directory: `[path-to-your-project]`
+
+## Available Tools
+
+### 1. Add Tool
+- **Name**: `add`
+- **Description**: Add two numbers together
+- **Parameters**:
+  - `a` (number): First number
+  - `b` (number): Second number
+
+### 2. Calculate Tool
+- **Name**: `calculate`
+- **Description**: Perform mathematical operations on two numbers
+- **Parameters**:
+  - `operation` (string): One of "add", "subtract", "multiply", "divide"
+  - `a` (number): First number
+  - `b` (number): Second number
+
+### 3. HeyGen Video Tool
+- **Name**: `create_heygen_video`
+- **Description**: Create a video using HeyGen API
+- **Parameters**:
+  - `avatar_id` (string): HeyGen avatar ID
+  - `voice_id` (string): HeyGen voice ID
+  - `input_text` (string): Text to convert to speech
+  - `background` (string, optional): Background color
+
+## Usage Examples
+
+You can now ask Cursor to:
+- "Add 5 and 3 using the add tool"
+- "Calculate 10 multiplied by 5"
+- "Create a HeyGen video with avatar_id 'abc123', voice_id 'xyz789', and text 'Hello world!'"
+
+## Testing
+
+Test the MCP bridge manually:
+```bash
+# Test initialization
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"clientInfo":{"name":"test","version":"1.0.0"}}}' | node mcp-bridge.js
+
+# Test tools list
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | node mcp-bridge.js
+
+# Test tool call
+echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add","arguments":{"a":10,"b":20}}}' | node mcp-bridge.js
+``` 
